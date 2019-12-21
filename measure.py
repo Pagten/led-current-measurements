@@ -152,9 +152,6 @@ def run_measurements(ctx, mode, brightness_range, value_range):
         for rgb_color in color_range:
             i += 1
             run_measurement_iteration(ctx, cur_brightness, rgb_color, i, nb_iterations, start_time)
-            
-    # Clear LEDs
-    ctx.strip.clear_strip()
                     
 def run(args, stdscr):
     mode_str = args.mode
@@ -176,19 +173,22 @@ def run(args, stdscr):
 
     with open(args.output_file, mode='w' if args.force else 'x') as csv_file:
         strip = apa102.APA102(num_led=num_leds, mosi=mosi_pin, sclk=sclk_pin, order=rgb_order)
-        with KoradSerial(psu_port) as power_supply:
-            stdscr.addstr(0, 0, 'PSU model: {}'.format(power_supply.model))
-            stdscr.refresh()
-
-            csv_file.write('# Command:, {}\r\n'.format(" ".join(sys.argv[:])))
-            csv_file.write('# PSU model:, {}\r\n'.format(power_supply.model))
-            csv_file.write('\r\n')
-
-            csv_writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            psu_channel = power_supply.channels[psu_channel_no]
-            ctx = Context(stdscr, csv_writer, strip, psu_channel, num_leds, settle_time, current_offset)
-            run_measurements(ctx, mode, brightness_range, value_range)
-        strip.cleanup()
+        try:
+            with KoradSerial(psu_port) as power_supply:
+                stdscr.addstr(0, 0, 'PSU model: {}'.format(power_supply.model))
+                stdscr.refresh()
+    
+                csv_file.write('# Command:, {}\r\n'.format(" ".join(sys.argv[:])))
+                csv_file.write('# PSU model:, {}\r\n'.format(power_supply.model))
+                csv_file.write('\r\n')
+    
+                csv_writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+                psu_channel = power_supply.channels[psu_channel_no]
+                ctx = Context(stdscr, csv_writer, strip, psu_channel, num_leds, settle_time, current_offset)
+                run_measurements(ctx, mode, brightness_range, value_range)
+        finally:
+            strip.clear_strip()
+            strip.cleanup()
 
 def main():
     arg_parser = argparse.ArgumentParser()
