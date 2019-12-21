@@ -1,8 +1,10 @@
 #!/usr/bin/python3
+import sys
 import csv
 import argparse
 import time
 import datetime
+import curses
 from lib.koradserial import KoradSerial
 from apa102_pi.driver import apa102
 
@@ -26,7 +28,7 @@ def set_strip_color(strip, num_leds, rgb_color, global_brightness):
     # Program strip
     strip.show()
     
-def run_measurements(csv_writer, strip, psu_channel, num_leds, settle_time, brightness_range, value_range):
+def run_measurements(stdscr, csv_writer, strip, psu_channel, num_leds, settle_time, brightness_range, value_range, current_offset):
     # Write header
     csv_writer.writerow(['Brightness (31)', 'Red (255)', 'Green (255)', 'Blue (255)', 'Voltage (V)', 'Current (mA)'])
 
@@ -50,28 +52,34 @@ def run_measurements(csv_writer, strip, psu_channel, num_leds, settle_time, brig
                 
                 # Measure voltage and current
                 voltage = psu_channel.output_voltage
-                current = psu_channel.output_current * 1000.0 / num_leds
+                current = (psu_channel.output_current * 1000.0 / num_leds) - current_offset
                 
                 # Write measurement to file
                 csv_writer.writerow([cur_brightness, red, green, blue, voltage, current])
-                i += 1
                 
                 # Progress calculations
+                i += 1
                 progress = i / nb_iterations * 100
                 time_elapsed = datetime.datetime.now() - start_time
-                time_per_iteration = time_elapsed / i if i > 0 else datetime.timedelta(seconds=settle_time)
+                time_per_iteration = time_elapsed / i
                 time_remaining = (nb_iterations - i) * time_per_iteration
                 hours_remaining, remainder = divmod(time_remaining.total_seconds(), 3600)
                 minutes_remaining, seconds_remaining = divmod(remainder, 60)
 
                 # Print status
-                print(f'Progress: {progress:6.2f}%\tCurrent color: ({red:3},{green:3},{blue:3}) @ {cur_brightness:2}\tTime remaining: {int(hours_remaining):2}:{int(minutes_remaining):02}:{int(seconds_remaining):02}', end='\r')
+                stdscr.addstr(2, 0, f'Color: R{red:<3} G{green:<3} B{blue:<3}\t'
+                                    f'Brightness: {cur_brightness:2}/31')
+                stdscr.addstr(3, 0, f'Voltage: {voltage:4.2f} V\t\t'
+                                    f'Current: {current:5.2f} mA')
+                stdscr.addstr(4, 0, f'Progress: {progress:6.2f}%\t'
+                                    f'Time remaining: {int(hours_remaining):2}:{int(minutes_remaining):02}:{int(seconds_remaining):02}')
+                stdscr.refresh()
     # Clear LEDs
-    set_strip_color(strip, num_leds, 0, 0)
+    strip.clear_strip()
     print()
 
                     
-def main():
+def main(stdscr):
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("output_file", metavar='output-file', help="CSV output file")
     arg_parser.add_argument("--psu-port", dest='psu_port',    help="power supply port", default='/dev/ttyS0')
@@ -85,6 +93,7 @@ def main():
     arg_parser.add_argument("--min-value", dest='min_value', help="min LED value to set", default=0)
     arg_parser.add_argument("--max-value", dest='max_value', help="max LED value to set", default=255)
     arg_parser.add_argument("--settle-time", dest='settle_time', help="number of milliseconds to wait between each measurement for the current to settle", default=100)
+    arg_parser.add_argument("--current-offset", dest='current_offset', help="number of mA to deduct from the current measurements", default=0)
     args = arg_parser.parse_args()
     
     psu_port = args.psu_port
@@ -92,6 +101,7 @@ def main():
     mosi_pin = args.strip_mosi
     sclk_pin = args.strip_sclk
     rgb_order = args.strip_rgb_order
+    current_offset = int(args.current_offset)
     
     num_leds = int(args.num_leds)
     brightness_range = range(int(args.min_brightness), int(args.max_brightness) + 1)
@@ -99,15 +109,21 @@ def main():
     settle_time = int(args.settle_time) / 1000.0
     
     with open(args.output_file, mode='w') as csv_file:
-        csv_writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-    
         strip = apa102.APA102(num_led=num_leds, mosi=mosi_pin, sclk=sclk_pin, order=rgb_order)
         with KoradSerial(psu_port) as power_supply:
-            print("PSU Model: ", power_supply.model)
-            
+            stdscr.addstr(0, 0, 'PSU model: {}'.format(power_supply.model))
+            stdscr.refresh()
+
+            csv_file.write('# Command:, {}\r\n'.format(" ".join(sys.argv[:])))
+            csv_file.write('# PSU model:, {}\r\n'.format(power_supply.model))
+            csv_file.write('\r\n')
+
+            csv_writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             psu_channel = power_supply.channels[psu_channel_no]
-            run_measurements(csv_writer, strip, psu_channel, num_leds, settle_time, brightness_range, value_range)
-          
+            run_measurements(stdscr, csv_writer, strip, psu_channel, num_leds, settle_time, brightness_range, value_range, current_offset)
+        strip.cleanup()
+
+
 if __name__ == "__main__":
-    main()
+    curses.wrapper(main)
     
