@@ -3,7 +3,7 @@ import csv
 import argparse
 import time
 import datetime
-from koradserial import KoradSerial
+from lib.koradserial import KoradSerial
 from apa102_pi.driver import apa102
 
 COLOR_BITSHIFTS = [16, 8, 0] # RGB
