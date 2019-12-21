@@ -174,7 +174,7 @@ def run(args, stdscr):
         raise ValueError("Invalid mode specified")
     mode = Mode[mode_str.upper()]
 
-    with open(args.output_file, mode='w') as csv_file:
+    with open(args.output_file, mode='w' if args.force else 'x') as csv_file:
         strip = apa102.APA102(num_led=num_leds, mosi=mosi_pin, sclk=sclk_pin, order=rgb_order)
         with KoradSerial(psu_port) as power_supply:
             stdscr.addstr(0, 0, 'PSU model: {}'.format(power_supply.model))
@@ -206,6 +206,7 @@ def main():
     arg_parser.add_argument("--max-value", dest='max_value', help="max LED value to set", default=255)
     arg_parser.add_argument("--settle-time", dest='settle_time', help="number of milliseconds to wait between each measurement for the current to settle", default=100)
     arg_parser.add_argument("--current-offset", dest='current_offset', help="number of mA to deduct from the current measurements", default=0)
+    arg_parser.add_argument("--force", action='store_true', help="don't abort if output-file already exists")
     args = arg_parser.parse_args()
 
     curses.wrapper(lambda stdscr: run(args, stdscr))
