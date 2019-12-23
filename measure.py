@@ -14,6 +14,13 @@ from apa102_pi.driver import apa102
 VOLTAGE_ABSOLUTE_MAX = 5.5
 COLOR_BITSHIFTS = [16, 8, 0] # RGB
 
+class Default:
+    def __init__(self, value):
+        self.value = value
+
+    def __float__(self):
+        return float(self.value)
+
 class ColorRange(ABC):
     def __init__(self, value_range):
         self.value_range = value_range
@@ -123,7 +130,8 @@ def set_strip_color(strip, num_leds, red, green, blue, global_brightness):
 
 def do_measurement(ctx, voltage_setpoint, brightness, red, green, blue):
     # Set voltage
-    ctx.psu_channel.voltage = voltage_setpoint
+    if voltage_setpoint is not None:
+        ctx.psu_channel.voltage = voltage_setpoint
 
     # Set strip color
     set_strip_color(ctx.strip, ctx.num_leds, red, green, blue, brightness)
@@ -157,7 +165,8 @@ def run_measurement_iteration(ctx, voltage_setpoint, brightness, rgb_color, i, n
     minutes_remaining, seconds_remaining = divmod(remainder, 60)
 
     # Print status
-    ctx.stdscr.addstr(2, 0, f'Voltage setpoint: {voltage_setpoint:4.2f} V')
+    voltage_setpoint_str = 'N/A' if voltage_setpoint is None else '{:4.2f} V'.format(voltage_setpoint)
+    ctx.stdscr.addstr(2, 0, f'Voltage setpoint: {voltage_setpoint_str}')
     ctx.stdscr.addstr(3, 0, f'Color: R{red:<3} G{green:<3} B{blue:<3}\t'
                             f'Brightness: {brightness:2}/31')
     ctx.stdscr.addstr(4, 0, f'Voltage: {measured_voltage:4.2f} V\t\t'
@@ -192,8 +201,16 @@ def run(args, stdscr):
     num_leds = int(args.num_leds)
     brightness_range = RangeInc(int(args.min_brightness), int(args.max_brightness), int(args.brightness_step))
     value_range = RangeInc(int(args.min_value), int(args.max_value), int(args.value_step))
-    voltage_range = RangeInc(float(args.min_voltage), float(args.max_voltage), float(args.voltage_step))
     settle_time = int(args.settle_time_ms) / 1000.0
+   
+    if isinstance(args.max_voltage, Default):
+        args.max_voltage = args.min_voltage
+    elif isinstance(args.min_voltage, Default):
+        args.min_voltage = args.max_voltage
+    if isinstance(args.min_voltage, Default):
+        voltage_range = [None]
+    else:
+        voltage_range = RangeInc(float(args.min_voltage), float(args.max_voltage), float(args.voltage_step))
 
     if float(args.max_voltage) > VOLTAGE_ABSOLUTE_MAX:
         raise ValueError("Max voltage out of range")
@@ -221,6 +238,7 @@ def run(args, stdscr):
             strip.clear_strip()
             strip.cleanup()
 
+
 def main():
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("output_file", metavar='output-file', help="CSV output file")
@@ -237,8 +255,8 @@ def main():
     arg_parser.add_argument("--min-value", dest='min_value', help="min LED value to set", default=0)
     arg_parser.add_argument("--max-value", dest='max_value', help="max LED value to set", default=255)
     arg_parser.add_argument("--value-step", dest='value_step', help="LED value step size", default=1)
-    arg_parser.add_argument("--min-voltage", dest='min_voltage', help="min voltage to set", default=5)
-    arg_parser.add_argument("--max-voltage", dest='max_voltage', help="max voltage to set", default=5)
+    arg_parser.add_argument("--min-voltage", dest='min_voltage', help="min voltage to set", default=Default(5))
+    arg_parser.add_argument("--max-voltage", dest='max_voltage', help="max voltage to set", default=Default(5))
     arg_parser.add_argument("--voltage-step", dest='voltage_step', help="voltage step size", default=0.25)
     arg_parser.add_argument("--settle-time", dest='settle_time_ms', help="number of milliseconds to wait between each measurement for the current to settle", default=100)
     arg_parser.add_argument("--current-offset", dest='current_offset', help="number of mA to deduct from the current measurements", default=0)
