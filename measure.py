@@ -3,6 +3,7 @@ import sys
 import csv
 import argparse
 import time
+import math
 import datetime
 import curses
 from abc import ABC, abstractmethod
@@ -101,14 +102,16 @@ class RangeInc:
         self.step = step
 
     def __iter__(self):
+        i = 0
         value = self.start
-        while (value < self.stop):
+        while (value * 1.001  < self.stop):
             yield value
-            value += self.step
+            i += 1
+            value = self.start + i * self.step
         yield self.stop
 
     def __len__(self):
-        return int((self.stop - self.start) // self.step) + 1
+        return math.ceil((self.stop - self.start) / self.step) + 1 
 
 def get_red(rgb_color):
     return int((rgb_color & 0xFF0000) >> 16)
@@ -141,7 +144,7 @@ def do_measurement(ctx, voltage_setpoint, brightness, red, green, blue):
     
     # Measure voltage and current
     voltage = ctx.psu_channel.output_voltage
-    current = (ctx.psu_channel.output_current * 1000.0 / ctx.num_leds) - ctx.current_offset
+    current = (ctx.psu_channel.output_current * 1000.0 - ctx.current_offset) / ctx.num_leds
     
     # Write measurement to file
     ctx.csv_writer.writerow([brightness, red, green, blue, voltage, current])
@@ -180,7 +183,7 @@ def run_measurements(ctx, mode, brightness_range, value_range, voltage_range):
     ctx.csv_writer.writerow(['Brightness (31)', 'Red (255)', 'Green (255)', 'Blue (255)', 'Voltage (V)', 'Current (mA)'])
 
     i = 0
-    color_range = mode.color_range(value_range) 
+    color_range = mode.color_range(value_range)
     nb_iterations = len(voltage_range) * len(brightness_range) * len(color_range)
     start_time = datetime.datetime.now()
     for voltage in voltage_range:
